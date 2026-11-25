@@ -1,0 +1,4 @@
+interface:
+  display_name: "Memova iCloud Export"
+  short_description: "Read and verify Memova iCloud exports"
+  default_prompt: "Use $memova-icloud-export to read my Memova recap for a date and cite the export."

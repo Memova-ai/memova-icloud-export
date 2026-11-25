@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "recording_id": "sample-hourly-01",
+  "kind": "hourly",
+  "archive_day": "2026-11-24",
+  "time_zone": "Asia/Shanghai",
+  "started_at": "2026-11-24T10:00:00+08:00",
+  "audio_sha256": "20eaebffe1816e0ffa6f7f854f5ef4ea80d5349faaf0ce1fec1b713e7fde58fa",
+  "sentences": [
+    {
+      "id": "s-001",
+      "text": "周四先核对录音导出的测试数据。",
+      "spoken_at": {
+        "start": "2026-11-24T10:00:01+08:00",
+        "end": "2026-11-24T10:00:02+08:00"
+      },
+      "audio_range_seconds": { "start": 1.0, "end": 2.0 },
+      "speaker_id": "speaker-01",
+      "is_self": true
+    }
+  ]
+}

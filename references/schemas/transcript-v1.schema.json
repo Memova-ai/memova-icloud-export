@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memova:icloud-export:v1:transcript",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "recording_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "kind": {
+      "enum": [
+        "hourly",
+        "phone_meeting"
+      ]
+    },
+    "archive_day": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "time_zone": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "started_at": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "audio_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sentences": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string"
+          },
+          "spoken_at": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "end": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audio_range_seconds": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "end": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speaker_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^speaker-[0-9]{2,}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_self": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "spoken_at",
+          "audio_range_seconds",
+          "speaker_id",
+          "is_self"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "recording_id",
+    "kind",
+    "archive_day",
+    "time_zone",
+    "started_at",
+    "audio_sha256",
+    "sentences"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "audio_sha256": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sentences": {
+            "items": {
+              "properties": {
+                "audio_range_seconds": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,456 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memova:icloud-export:v1:manifest",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "archive_day": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "publisher_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "commit_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "committed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-]00:00)$"
+    },
+    "contents": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "ready",
+                "empty",
+                "deleted",
+                "never_exported"
+              ]
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updated_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-]00:00)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^results/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/daily-summary\\.md$"
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4194304
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "recording_id": {
+                    "type": "null"
+                  },
+                  "kind": {
+                    "type": "null"
+                  }
+                },
+                "required": [
+                  "path",
+                  "byte_count",
+                  "sha256",
+                  "recording_id",
+                  "kind"
+                ]
+              },
+              "maxItems": 1
+            }
+          },
+          "required": [
+            "state",
+            "revision",
+            "updated_at",
+            "files"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "never_exported"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "revision": {
+                    "type": "null"
+                  },
+                  "updated_at": {
+                    "type": "null"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "revision": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-]00:00)$"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "ready"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "files": {
+                    "minItems": 1
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "files": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "transcripts": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "ready",
+                "empty",
+                "deleted",
+                "never_exported"
+              ]
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updated_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-]00:00)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^transcripts/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/(hourly|meetings)/[0-9a-f]{64}\\.json$"
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 67108864
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "recording_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "kind": {
+                    "enum": [
+                      "hourly",
+                      "phone_meeting"
+                    ]
+                  }
+                },
+                "required": [
+                  "path",
+                  "byte_count",
+                  "sha256",
+                  "recording_id",
+                  "kind"
+                ]
+              }
+            }
+          },
+          "required": [
+            "state",
+            "revision",
+            "updated_at",
+            "files"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "never_exported"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "revision": {
+                    "type": "null"
+                  },
+                  "updated_at": {
+                    "type": "null"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "revision": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-]00:00)$"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "ready"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "files": {
+                    "minItems": 1
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "files": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "audio": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "ready",
+                "empty",
+                "deleted",
+                "never_exported"
+              ]
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updated_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-]00:00)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^audio/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/(hourly|meetings)/[0-9a-f]{64}\\.(m4a|caf|wav|mp3|aac)$"
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "recording_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "kind": {
+                    "enum": [
+                      "hourly",
+                      "phone_meeting"
+                    ]
+                  }
+                },
+                "required": [
+                  "path",
+                  "byte_count",
+                  "sha256",
+                  "recording_id",
+                  "kind"
+                ]
+              }
+            }
+          },
+          "required": [
+            "state",
+            "revision",
+            "updated_at",
+            "files"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "never_exported"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "revision": {
+                    "type": "null"
+                  },
+                  "updated_at": {
+                    "type": "null"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "revision": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-]00:00)$"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "ready"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "files": {
+                    "minItems": 1
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "files": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "results",
+        "transcripts",
+        "audio"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "archive_day",
+    "publisher_id",
+    "commit_id",
+    "committed_at",
+    "contents"
+  ]
+}

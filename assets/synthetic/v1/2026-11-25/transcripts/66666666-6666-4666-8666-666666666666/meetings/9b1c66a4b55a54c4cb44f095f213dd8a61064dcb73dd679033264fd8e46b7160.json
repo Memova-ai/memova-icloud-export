@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "recording_id": "sample-meeting-跨日",
+  "kind": "phone_meeting",
+  "archive_day": "2026-11-25",
+  "time_zone": "Asia/Shanghai",
+  "started_at": "2026-11-25T23:59:59+08:00",
+  "audio_sha256": null,
+  "sentences": [
+    {
+      "id": "m-001",
+      "text": "先确认例会已经开始。",
+      "spoken_at": {
+        "start": "2026-11-25T23:59:59+08:00",
+        "end": "2026-11-26T00:00:00+08:00"
+      },
+      "audio_range_seconds": null,
+      "speaker_id": "speaker-01",
+      "is_self": true
+    },
+    {
+      "id": "m-002",
+      "text": "午夜后继续核对虚构的交接清单。",
+      "spoken_at": {
+        "start": "2026-11-26T00:00:01+08:00",
+        "end": "2026-11-26T00:00:02+08:00"
+      },
+      "audio_range_seconds": null,
+      "speaker_id": null,
+      "is_self": null
+    }
+  ]
+}

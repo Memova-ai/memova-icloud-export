@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "archive_day": "2026-11-24",
+  "publisher_id": "11111111-1111-4111-8111-111111111111",
+  "commit_id": "22222222-2222-4222-8222-222222222222",
+  "committed_at": "2026-11-25T02:15:00Z",
+  "contents": {
+    "transcripts": {
+      "state": "ready",
+      "revision": "33333333-3333-4333-8333-333333333333",
+      "updated_at": "2026-11-25T02:15:00Z",
+      "files": [
+        {
+          "path": "transcripts/33333333-3333-4333-8333-333333333333/hourly/20d94127cb8a60816c3bc44354dff1586533fcf86fc267d468a65bca15a9bfdf.json",
+          "byte_count": 630,
+          "sha256": "f09d1ee30971783b21575484933ee4f46421c5164164e1307362fef99101b067",
+          "recording_id": "sample-hourly-01",
+          "kind": "hourly"
+        }
+      ]
+    },
+    "results": {
+      "state": "ready",
+      "revision": "44444444-4444-4444-8444-444444444444",
+      "updated_at": "2026-11-25T02:15:00Z",
+      "files": [
+        {
+          "path": "results/44444444-4444-4444-8444-444444444444/daily-summary.md",
+          "byte_count": 202,
+          "sha256": "f1323bd4a3fb7c47ffef20a2c9bf6c2132d2d1494f0409c41219f7636add69eb",
+          "recording_id": null,
+          "kind": null
+        }
+      ]
+    },
+    "audio": {
+      "state": "ready",
+      "revision": "55555555-5555-4555-8555-555555555555",
+      "updated_at": "2026-11-25T02:15:00Z",
+      "files": [
+        {
+          "path": "audio/55555555-5555-4555-8555-555555555555/hourly/20d94127cb8a60816c3bc44354dff1586533fcf86fc267d468a65bca15a9bfdf.wav",
+          "byte_count": 64044,
+          "sha256": "20eaebffe1816e0ffa6f7f854f5ef4ea80d5349faaf0ce1fec1b713e7fde58fa",
+          "recording_id": "sample-hourly-01",
+          "kind": "hourly"
+        }
+      ]
+    }
+  }
+}

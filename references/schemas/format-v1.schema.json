@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memova:icloud-export:v1:format",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "memova-icloud-export"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "environment": {
+      "enum": [
+        "production",
+        "development"
+      ]
+    },
+    "publisher_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  },
+  "required": [
+    "format",
+    "schema_version",
+    "environment",
+    "publisher_id"
+  ]
+}
