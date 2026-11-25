@@ -12,6 +12,7 @@ import signal
 import stat
 import subprocess
 import sys
+import time
 
 sys.dont_write_bytecode = True
 from export_contract import (  # noqa: E402
@@ -32,6 +33,7 @@ from export_contract import (  # noqa: E402
 
 
 CHUNK = 1024 * 1024
+ROOT_PROBE_SECONDS = 10
 DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 METADATA = Path(__file__).with_name("icloud_metadata.js").resolve()
@@ -188,28 +190,54 @@ def default_paths(home, environment, *, folder="v1"):
     return (mobile / identifier / "Documents" / folder, mobile / "com~apple~CloudDocs" / name / folder)
 
 
-def locate_candidates(candidates, boundary, environment, *, expected_format=None, optional=False):
+@contextlib.contextmanager
+def root_probe_deadline():
+    started = time.monotonic()
+    remaining = signal.getitimer(signal.ITIMER_REAL)[0]
+    if remaining == 0:
+        yield
+        return
+    overall_deadline = started + remaining
+    try:
+        # Keep time for the next candidate and reading from a verified root.
+        signal.setitimer(signal.ITIMER_REAL, min(ROOT_PROBE_SECONDS, remaining / 3))
+        yield
+    except ReadDeadline:
+        if time.monotonic() >= overall_deadline:
+            raise
+        raise ExportError("timeout", "An iCloud export path did not respond. Specify a readable directory with --root.") from None
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, max(1e-6, overall_deadline - time.monotonic()))
+
+
+def locate_candidates(candidates, boundary, environment, *, expected_format=None, optional=False, bounded=False):
+    probe = root_probe_deadline if bounded else contextlib.nullcontext
     valid = []
     problems = []
     try:
         for path in candidates:
+            root = None
             try:
-                root = ExportRoot(path, boundary, environment, expected_format=expected_format)
+                with probe():
+                    root = ExportRoot(path, boundary, environment, expected_format=expected_format)
+                    duplicate = any(os.path.samestat(os.fstat(root.fd), os.fstat(found.fd)) for found in valid)
             except OSError as exc:
                 problems.append(os_problem(exc))
             except ExportError as exc:
                 problems.append(exc)
             else:
-                if any(os.path.samestat(os.fstat(root.fd), os.fstat(found.fd)) for found in valid):
-                    root.close()
-                else:
+                if not duplicate:
                     valid.append(root)
+                    root = None
+            finally:
+                if root is not None:
+                    root.close()
         if len(valid) > 1:
             raise ExportError("ambiguous_root", "More than one export matched. Specify the intended directory.")
         if valid:
             return valid.pop()
         for status in (
-            "permission_denied", "unsupported_version", "environment_mismatch", "icloud_conflict",
+            "timeout", "permission_denied", "unsupported_version", "environment_mismatch", "icloud_conflict",
             "stale", "not_downloaded", "metadata_unavailable", "invalid_contract",
             "too_large", "unsafe_path", "file_unavailable", "root_marker_not_found",
         ):
@@ -231,11 +259,11 @@ def locate_root(explicit, environment):
         home = Path.home()
         official = locate_candidates(
             default_paths(home, environment, folder="app-v1"), home, environment,
-            expected_format=APP_FORMAT, optional=True,
+            expected_format=APP_FORMAT, optional=True, bounded=True,
         )
         if official is not None:
             return official
-        return locate_candidates(default_paths(home, environment), home, environment, expected_format=FORMAT)
+        return locate_candidates(default_paths(home, environment), home, environment, expected_format=FORMAT, bounded=True)
 
     explicit = Path(explicit).expanduser().absolute()
     boundary = explicit.parent
@@ -518,7 +546,7 @@ def arguments():
         return parse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", action="version", version="memova-icloud-export 0.2.0-dev (App V1 and preview V1)")
+    parser.add_argument("--version", action="version", version="memova-icloud-export 0.2.0 (App V1 and preview V1)")
     modes = parser.add_subparsers(dest="mode", required=True)
     for mode in ("list", "read", "validate"):
         sub = modes.add_parser(mode)

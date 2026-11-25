@@ -2,24 +2,31 @@
 
 Read Memova Local events, daily reviews, transcripts, meeting notes, favorites and requested original audio in a file-enabled agent. The reader checks the active day manifest and validates file sizes and SHA-256 before returning evidence.
 
-The public `v0.1.0` tag supports the preview export. An updated checkout also reads the App's automatic iCloud sync V1. Signed iPhone to Mac Agent delivery needs to be verified in the target iCloud account.
+Release `v0.2.0` reads the App's automatic iCloud sync V1 and the earlier preview export. Mac discovery requires that the local iCloud Drive account can access the published files.
 
 ## Install in Codex
 
-Install the whole Skill checkout under your project's `.agents/skills/memova-icloud-export` so its scripts and references stay with `SKILL.md`. To try the published preview, run the following from the project where you want to use the Skill.
+Install the whole Skill checkout under your project's `.agents/skills/memova-icloud-export` so its scripts and references stay with `SKILL.md`. Run the following from the project where you want to use the Skill.
 
 ```sh
 mkdir -p .agents/skills
-git clone --branch v0.1.0 --depth 1 \
+git clone --branch v0.2.0 --depth 1 \
   https://github.com/Memova-ai/memova-icloud-export.git \
   .agents/skills/memova-icloud-export
 ```
 
-For App V1, use a checkout that includes App sync support. Start a Codex session in that project and invoke `$memova-icloud-export`. To install it from a [release archive](https://github.com/Memova-ai/memova-icloud-export/releases), place the entire extracted folder at `.agents/skills/memova-icloud-export` so `SKILL.md` is at the top level. Other clients that support the Agent Skills format can use the same folder with their own installation workflow. [Codex skill locations](https://learn.chatgpt.com/docs/build-skills) · [Agent Skills format](https://agentskills.io/specification)
+Start a Codex session in that project and invoke `$memova-icloud-export`. If you installed `v0.1.0` with Git, fetch the new tag and switch your checkout to it.
+
+```sh
+git -C .agents/skills/memova-icloud-export fetch origin tag v0.2.0
+git -C .agents/skills/memova-icloud-export switch --detach v0.2.0
+```
+
+To install from a release archive, place the entire extracted folder at `.agents/skills/memova-icloud-export` so `SKILL.md` is at the top level. Other clients that support the Agent Skills format can use the same folder with their own installation workflow. [Release archive](https://github.com/Memova-ai/memova-icloud-export/releases/tag/v0.2.0) · [Codex skill locations](https://learn.chatgpt.com/docs/build-skills) · [Agent Skills format](https://agentskills.io/specification)
 
 The reader requires Python 3.9 or later. Automatic discovery uses macOS and the local account's iCloud Drive. A POSIX runtime can read an explicitly supplied export copy. No additional Python package is needed for the reader.
 
-## Try the included export
+## Try the included preview export
 
 Try these commands from the Skill directory.
 
@@ -36,16 +43,17 @@ You can also invoke the Skill in Codex.
 
 ## Read a Memova export
 
-On iPhone, open **More → Time & Memories → iCloud Sync**, turn on the main switch, and pick the categories to sync. On Mac, open **Finder → iCloud Drive → Memova Exports → app-v1**. A local Mac agent can discover this folder automatically. Finder's **Download Now** can make online files available locally. In a hosted session, provide an authorized copy or a local file bridge. [Apple iCloud file status](https://support.apple.com/en-gb/guide/mac-help/mchlc994344b/mac)
+On iPhone, open **More → Time & Memories → iCloud Sync**, turn on the main switch, and pick the categories to sync. On Mac, open **Finder → iCloud Drive → Memova Exports → app-v1**. The reader checks both macOS paths for this folder. Finder's **Download Now** can make online files available locally. In a hosted session, provide an authorized copy or a local file bridge. [Apple iCloud file status](https://support.apple.com/en-gb/guide/mac-help/mchlc994344b/mac)
 
 ```sh
 python3 -B scripts/read_export.py list
+python3 -B scripts/read_export.py list --environment development
 python3 -B scripts/read_export.py read --date 2026-11-24 --type daily_reviews --type transcripts
 python3 -B scripts/read_export.py read --latest --type favorites
 python3 -B scripts/read_export.py validate --root "/path/to/Memova Exports/app-v1"
 ```
 
-The preview remains available under `v1` and uses `--type results` for the combined daily recap and events. Use `--root` with the preview folder to choose it explicitly. The Skill keeps local files read-only. Its default read is limited to text. Audio is read only when explicitly requested. Evidence files can contain private information, and the agent's own settings determine how returned text is processed. Use the included synthetic fixture when sharing test output.
+Development uses **Memova Exports Dev → app-v1**. The preview remains available under `v1` and uses `--type results` for the combined daily recap and events. To read a particular folder, pass its path with `--root`. The Skill keeps local files read-only. Its default read is limited to text. Audio is read only when explicitly requested. Evidence files can contain private information, and the agent's own settings determine how returned text is processed. Use the included synthetic fixture when sharing test output.
 
 ## App integration and development
 
@@ -58,4 +66,4 @@ See [GitHub Issues](https://github.com/Memova-ai/memova-icloud-export/issues) fo
 
 ## 中文快速开始
 
-先按上面的命令把 Skill 安装到当前项目。在 Codex 里输入「`$memova-icloud-export` 读取 `assets/synthetic` 里最近一份可读的每日回顾并标注出处」即可试用。App 自动同步的入口是「iCloud Drive → Memova Exports → app-v1」。公开预览仍可从 `v1` 目录读取。真机端到端联调需要同时验证 iPhone 写入和 Mac Agent 读取。
+按上面的命令安装 `v0.2.0`。在 Codex 里输入「`$memova-icloud-export` 读取 `assets/synthetic` 里最近一份可读的每日回顾并标注出处」即可试用。App 的正式目录是「iCloud Drive → Memova Exports → app-v1」，开发版使用「Memova Exports Dev → app-v1」。旧预览的 `v1` 目录仍可读取。真机联调需要验证 iPhone 写入和 Mac 上实际运行 Skill 时的读取权限。

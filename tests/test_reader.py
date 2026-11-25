@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -523,6 +524,63 @@ class AppReaderTests(CLIReaderTestCase):
             shutil.copyfile(preview / "format.json", official / "format.json")
             code, report = self.run_cli("list", root=False)
             self.assertEqual((code, report["status"]), (2, "invalid_contract"))
+
+    def test_root_discovery_uses_the_other_candidate_when_one_stalls(self):
+        home = self.base / "home"
+        native, finder = reader.default_paths(home, "production", folder="app-v1")
+        for candidate in (native, finder):
+            shutil.copytree(self.root, candidate)
+        original = reader.ExportRoot.read_file
+
+        for stalled, readable in ((native, finder), (finder, native)):
+            with self.subTest(stalled=stalled), patch.object(sys, "platform", "darwin"), \
+                    patch.object(Path, "home", return_value=home):
+                stalled_path = stalled.resolve()
+
+                def read_file(root, relative, **kwargs):
+                    if root.path == stalled_path and relative == "format.json":
+                        time.sleep(2)
+                    return original(root, relative, **kwargs)
+
+                with patch.object(reader.ExportRoot, "read_file", read_file):
+                    code, report = self.run_cli("list", "--timeout", "1", root=False)
+                self.assertEqual((code, report.get("root")), (0, str(readable.resolve())))
+                self.assertEqual(report["archive_days"], [DAY])
+
+    def test_stalled_official_candidate_blocks_preview_fallback(self):
+        home = self.base / "home"
+        official, _ = reader.default_paths(home, "production", folder="app-v1")
+        preview, _ = reader.default_paths(home, "production")
+        shutil.copytree(self.root, official)
+        shutil.copytree(FIXTURE, preview)
+        original = reader.ExportRoot.read_file
+        stalled_path = official.resolve()
+
+        def read_file(root, relative, **kwargs):
+            if root.path == stalled_path and relative == "format.json":
+                time.sleep(2)
+            return original(root, relative, **kwargs)
+
+        with patch.object(sys, "platform", "darwin"), patch.object(Path, "home", return_value=home), \
+                patch.object(reader.ExportRoot, "read_file", read_file):
+            code, report = self.run_cli("list", "--timeout", "1", root=False)
+        self.assertEqual((code, report["status"]), (2, "timeout"))
+        self.assertNotIn("archive_days", report)
+
+    def test_recording_id_is_unique_across_kinds_in_each_recording_category(self):
+        for category in ("audio", "transcripts"):
+            files = self.contents[category]["files"]
+            entry = files[0]
+            other_kind = dict(entry, kind="phone_meeting", path=entry["path"].replace("/hourly/", "/meetings/", 1))
+            files[:] = sorted((entry, other_kind), key=lambda item: item["path"])
+        self.write_head()
+
+        code, report = self.run_cli("read", "--date", DAY, "--type", "audio", "--type", "transcripts")
+        self.assertEqual(code, 1)
+        for category in ("audio", "transcripts"):
+            result = report["days"][0]["contents"][category]
+            self.assertEqual(result["status"], "invalid_contract")
+            self.assertIn("same item twice", result["detail"])
 
     def test_wrong_digest_path_or_bytes_emit_no_affected_category_evidence(self):
         event = self.contents["events"]["files"][0]

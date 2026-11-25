@@ -2,12 +2,12 @@
 name: memova-icloud-export
 description: Read and cite Memova Local data synced to iCloud Drive, including events, daily reviews, transcripts, standalone meeting notes, favorites, and explicitly requested original audio. Also reads Memova's preview exports. 读取并引用 Memova Local 同步到 iCloud 的当日事件、每日回顾、转写、独立会议纪要、收藏和原音。
 metadata:
-  version: "0.2.0-dev"
+  version: "0.2.0"
 ---
 
 # Memova iCloud Export
 
-Use `python3 -B scripts/read_export.py` from this Skill directory or invoke the script by absolute path. It requires Python 3.9 or later and reports verified evidence as JSON. Pass `--root` only for a directory the user supplies or an agreed fixture. Otherwise use local Mac discovery. The App V1 folder is Finder → iCloud Drive → Memova Exports → app-v1. Hosted sessions need an authorized local bridge or supplied copy.
+Use `python3 -B scripts/read_export.py` from this Skill directory or invoke the script by absolute path. It requires Python 3.9 or later and reports verified evidence as JSON. Pass `--root` for a directory the user supplies or an agreed fixture. Otherwise use local Mac discovery. The App V1 folder is Finder → iCloud Drive → Memova Exports → app-v1. Use `--environment development` for Memova Exports Dev. Hosted sessions need an authorized local bridge or supplied copy.
 
 ## Read the requested material
 

@@ -7,7 +7,7 @@ The iPhone App publishes plain files under Finder → iCloud Drive → Memova Ex
 ~/Library/Mobile Documents/com~apple~CloudDocs/Memova Exports/app-v1
 ```
 
-Development uses `iCloud~ai~memova~exports~dev` and `Memova Exports Dev`. Use `--environment development` for development data. The reader's default discovery prefers App V1. It tries the [public preview](v1-export.md) only when both App V1 directory candidates are absent. An existing but unavailable or invalid App V1 root yields a diagnostic. Use `--root` with an authorized copy of either export directory or its parent.
+Development uses `iCloud~ai~memova~exports~dev` and `Memova Exports Dev`. Use `--environment development` for development data. Automatic discovery bounds each path check so a stalled path leaves time to try the other. If both paths contain different readable exports, pass `--root` to choose the intended export. Discovery tries the [public preview](v1-export.md) only when both App V1 paths are absent. If no App V1 path is readable and a path times out, the reader reports `timeout`. Use `--root` with an authorized copy of either export directory or its parent.
 
 ## Layout
 
@@ -54,7 +54,7 @@ A paused switch preserves the previous cloud publication. State shows what the m
 
 JSON and Markdown use UTF-8 without a BOM. A favorite is independently readable even when the respective source category was never synced. A daily review favorite keeps its archive day as its item ID. Original audio and full transcripts are published through their own categories.
 
-Recording kinds `hourly` and `phone_meeting` use directories `hourly` and `meetings`, respectively. The meeting's archive day is its start date. A spoken timestamp can extend past midnight. The reader binds sentence offsets to audio only when the audio was requested, the recording ID and kind match, and the transcript's audio hash matches the verified audio. The text remains usable when the selected recording bytes have a different hash or the transcript has no offsets.
+Recording kinds `hourly` and `phone_meeting` use directories `hourly` and `meetings`, respectively. Within a day's transcript or audio category, each recording ID may occur only once across kinds. Favorites identify entries by kind and item ID. The meeting's archive day is its start date. A spoken timestamp can extend past midnight. The reader binds sentence offsets to audio only when the audio was requested, the recording ID and kind match, and the transcript's audio hash matches the verified audio. The text remains usable when the selected recording bytes have a different hash or the transcript has no offsets.
 
 ## Reader and compatibility check
 
