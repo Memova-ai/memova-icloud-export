@@ -1,6 +1,6 @@
-# Memova iCloud export V1
+# Memova iCloud export V1 public preview
 
-The Skill package version is `0.1.0`. The file protocol is `schema_version: 1`. The writer and reader can release independently while they preserve the V1 contract.
+The Skill's `v0.1.0` release introduced this preview export under `v1/` with `format: "memova-icloud-export"`. The [App V1 sync](app-v1-sync.md) uses its own marker and `app-v1/` layout. The Skill can still read preview exports.
 
 ## Root and layout
 

@@ -1,4 +1,4 @@
-"""Memova iCloud export V1 decoding and semantic validation."""
+"""Decode and validate Memova iCloud exports for the App and preview V1 formats."""
 
 import datetime as dt
 import hashlib
@@ -9,9 +9,17 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 FORMAT = "memova-icloud-export"
+APP_FORMAT = "memova-icloud-sync"
 VERSION = 1
 KINDS = {"hourly": "hourly", "phone_meeting": "meetings"}
 CATEGORIES = ("results", "transcripts", "audio")
+APP_CATEGORIES = ("transcripts", "events", "daily_reviews", "audio", "meeting_notes", "favorites")
+APP_MARKDOWN = {
+    "events": ("event",),
+    "daily_reviews": ("daily_review",),
+    "meeting_notes": ("meeting",),
+    "favorites": ("event", "daily_review", "meeting"),
+}
 STATES = {"never_exported", "ready", "empty", "deleted"}
 AUDIO_EXTENSIONS = {"m4a", "caf", "wav", "mp3", "aac"}
 LIMITS = {
@@ -19,6 +27,7 @@ LIMITS = {
     "manifest": 16 * 1024 * 1024,
     "transcripts": 64 * 1024 * 1024,
     "results": 4 * 1024 * 1024,
+    **dict.fromkeys(APP_MARKDOWN, 4 * 1024 * 1024),
 }
 DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -146,7 +155,7 @@ def recording_key(recording_id):
 def read_marker(raw, environment):
     value = decode_json(raw)
     required(value, ("format", "schema_version", "environment", "publisher_id"), "format.json")
-    if value["format"] != FORMAT:
+    if value["format"] not in (FORMAT, APP_FORMAT):
         invalid("format.json does not identify a Memova iCloud export.")
     check_version(value)
     if value["environment"] not in ("production", "development"):
@@ -158,7 +167,7 @@ def read_marker(raw, environment):
     return value
 
 
-def read_manifest(raw, day, publisher):
+def read_manifest(raw, day, publisher, export_format=FORMAT):
     value = decode_json(raw)
     required(
         value,
@@ -173,11 +182,45 @@ def read_manifest(raw, day, publisher):
     if not matches(UUID, value["commit_id"]):
         invalid("Invalid manifest commit_id.")
     timestamp(value["committed_at"], "committed_at", utc=True)
-    required(value["contents"], CATEGORIES, "Manifest contents")
+    contents = value["contents"]
+    categories = APP_CATEGORIES if export_format == APP_FORMAT else CATEGORIES
+    required(contents, categories, "Manifest contents")
+    if export_format == APP_FORMAT and len(contents) != len(categories):
+        invalid("The App V1 manifest must contain exactly six categories.")
     return value
 
 
-def read_category(value, category):
+def recording_location(file, category, revision, app_format):
+    recording_id = file["recording_id"]
+    key = recording_key(recording_id)
+    kind = file["kind"]
+    if not isinstance(kind, str) or kind not in KINDS:
+        invalid("Unknown recording kind.")
+    extension = file["path"].rsplit(".", 1)[-1]
+    allowed = {"json"} if category == "transcripts" else AUDIO_EXTENSIONS
+    if extension not in allowed:
+        invalid("The payload has an unsupported extension.")
+    if app_format:
+        return recording_id, f'{category}/{KINDS[kind]}/{key}/{file["sha256"]}.{extension}'
+    return recording_id, f"{category}/{revision}/{KINDS[kind]}/{key}.{extension}"
+
+
+def markdown_location(file, category, day):
+    item_id = string(file["item_id"], "item_id")
+    kind = file["kind"]
+    if not item_id or kind not in APP_MARKDOWN[category]:
+        invalid("Invalid Markdown item identity or kind.")
+    if kind == "daily_review" and item_id != day:
+        invalid("A daily review item_id must be its archive day.")
+    directory = category
+    if category == "favorites":
+        timestamp(file.get("favorited_at"), "favorited_at", utc=True)
+        directory = f"{category}/{kind}"
+    key = hashlib.sha256(item_id.encode("utf-8")).hexdigest()
+    return (kind, item_id), f'{directory}/{key}/{file["sha256"]}.md'
+
+
+def read_category(value, category, *, export_format=FORMAT, day=None):
     required(value, ("state", "revision", "updated_at", "files"), category)
     state, revision, updated, files = (value[key] for key in ("state", "revision", "updated_at", "files"))
     if not isinstance(state, str) or state not in STATES or not isinstance(files, list):
@@ -189,13 +232,15 @@ def read_category(value, category):
         if not matches(UUID, revision):
             invalid("Invalid category revision.")
         timestamp(updated, "updated_at", utc=True)
-    if (state == "ready") != bool(files) or (category == "results" and len(files) > 1):
+    if (state == "ready") != bool(files) or (category in ("results", "daily_reviews") and len(files) > 1):
         invalid("The category state and number of files do not agree.")
 
     previous = None
-    recording_ids = set()
+    identities = set()
+    markdown = category in APP_MARKDOWN
+    identity_field = "item_id" if markdown else "recording_id"
     for file in files:
-        required(file, ("path", "byte_count", "sha256", "recording_id", "kind"), "File entry")
+        required(file, ("path", "byte_count", "sha256", identity_field, "kind"), "File entry")
         path, size, digest = (file[key] for key in ("path", "byte_count", "sha256"))
         if not isinstance(path, str) or type(size) is not int or size <= 0 or not matches(SHA, digest):
             invalid("Invalid file path, byte_count or SHA-256.")
@@ -207,21 +252,15 @@ def read_category(value, category):
         if category == "results":
             if file["recording_id"] is not None or file["kind"] is not None:
                 invalid("A daily summary cannot have a recording_id or kind.")
+            identity = None
             expected = f"results/{revision}/daily-summary.md"
+        elif markdown:
+            identity, expected = markdown_location(file, category, day)
         else:
-            recording_id = file["recording_id"]
-            key = recording_key(recording_id)
-            kind = file["kind"]
-            if not isinstance(kind, str) or kind not in KINDS:
-                invalid("Unknown recording kind.")
-            if recording_id in recording_ids:
-                invalid("A category lists the same recording twice.")
-            recording_ids.add(recording_id)
-            extension = path.rsplit(".", 1)[-1]
-            allowed = {"json"} if category == "transcripts" else AUDIO_EXTENSIONS
-            if extension not in allowed:
-                invalid("The payload has an unsupported extension.")
-            expected = f"{category}/{revision}/{KINDS[kind]}/{key}.{extension}"
+            identity, expected = recording_location(file, category, revision, export_format == APP_FORMAT)
+        if identity in identities:
+            invalid("A category lists the same item twice.")
+        identities.add(identity)
         if path != expected:
             raise ExportError("unsafe_path", "A manifest path does not match its V1 directory and identity.")
     return value

@@ -15,7 +15,11 @@ import sys
 
 sys.dont_write_bytecode = True
 from export_contract import (  # noqa: E402
+    APP_CATEGORIES,
+    APP_FORMAT,
+    APP_MARKDOWN,
     CATEGORIES,
+    FORMAT,
     LIMITS,
     VERSION,
     ExportError,
@@ -75,7 +79,7 @@ def mac_metadata(path):
 
 
 class ExportRoot:
-    def __init__(self, path, boundary, environment):
+    def __init__(self, path, boundary, environment, *, expected_format=None):
         try:
             base = boundary.resolve(strict=True)
         except RuntimeError as exc:
@@ -94,6 +98,13 @@ class ExportRoot:
         try:
             self.marker_bytes = self.read_file("format.json", limit=LIMITS["format"])
             self.marker = read_marker(self.marker_bytes, environment)
+            if expected_format is not None and self.marker["format"] != expected_format:
+                raise ExportError("invalid_contract", "The marker does not match the iCloud directory layout.")
+        except ExportError as exc:
+            self.close()
+            if expected_format == APP_FORMAT and exc.status == "file_missing":
+                raise ExportError("root_marker_not_found", "The App V1 directory is present, but its marker is unavailable.") from exc
+            raise
         except BaseException:
             self.close()
             raise
@@ -169,31 +180,21 @@ class ExportRoot:
             raise os_problem(exc) from exc
 
 
-def default_paths(home, environment):
+def default_paths(home, environment, *, folder="v1"):
     mobile = home / "Library" / "Mobile Documents"
     development = environment == "development"
     identifier = "iCloud~ai~memova~exports" + ("~dev" if development else "")
     name = "Memova Exports Dev" if development else "Memova Exports"
-    return (mobile / identifier / "Documents" / "v1", mobile / "com~apple~CloudDocs" / name / "v1")
+    return (mobile / identifier / "Documents" / folder, mobile / "com~apple~CloudDocs" / name / folder)
 
 
-def locate_root(explicit, environment):
-    if explicit is None:
-        if sys.platform != "darwin":
-            raise ExportError("local_mac_required", "Provide an authorized local export copy with --root.")
-        boundary = Path.home()
-        candidates = default_paths(boundary, environment)
-    else:
-        explicit = Path(explicit).expanduser().absolute()
-        boundary = explicit.parent
-        candidates = (explicit, explicit / "v1")
-
+def locate_candidates(candidates, boundary, environment, *, expected_format=None, optional=False):
     valid = []
     problems = []
     try:
         for path in candidates:
             try:
-                root = ExportRoot(path, boundary, environment)
+                root = ExportRoot(path, boundary, environment, expected_format=expected_format)
             except OSError as exc:
                 problems.append(os_problem(exc))
             except ExportError as exc:
@@ -210,15 +211,42 @@ def locate_root(explicit, environment):
         for status in (
             "permission_denied", "unsupported_version", "environment_mismatch", "icloud_conflict",
             "stale", "not_downloaded", "metadata_unavailable", "invalid_contract",
-            "too_large", "unsafe_path", "file_unavailable",
+            "too_large", "unsafe_path", "file_unavailable", "root_marker_not_found",
         ):
             for problem in problems:
                 if problem.status == status:
                     raise problem
-        raise ExportError("root_not_found", "No V1 export was found. Check Finder, iCloud Drive and the first export.")
+        if optional:
+            return None
+        raise ExportError("root_not_found", "No V1 export was found. Check Finder, iCloud Drive and the first sync or export.")
     finally:
         for root in valid:
             root.close()
+
+
+def locate_root(explicit, environment):
+    if explicit is None:
+        if sys.platform != "darwin":
+            raise ExportError("local_mac_required", "Provide an authorized local export copy with --root.")
+        home = Path.home()
+        official = locate_candidates(
+            default_paths(home, environment, folder="app-v1"), home, environment,
+            expected_format=APP_FORMAT, optional=True,
+        )
+        if official is not None:
+            return official
+        return locate_candidates(default_paths(home, environment), home, environment, expected_format=FORMAT)
+
+    explicit = Path(explicit).expanduser().absolute()
+    boundary = explicit.parent
+    if explicit.name == "app-v1":
+        return locate_candidates((explicit,), boundary, environment, expected_format=APP_FORMAT)
+    official = locate_candidates(
+        (explicit / "app-v1",), boundary, environment, expected_format=APP_FORMAT, optional=True,
+    )
+    if official is not None:
+        return official
+    return locate_candidates((explicit, explicit / "v1"), boundary, environment)
 
 
 class EvidenceBudget:
@@ -289,7 +317,7 @@ def transcript_evidence(transcript, file, audio_files, opts, budget):
 
 
 def read_type(root, day, category, entry, opts, budget, audio_files):
-    entry = read_category(entry, category)
+    entry = read_category(entry, category, export_format=root.marker["format"], day=day)
     outcome = {
         "state": entry["state"], "status": entry["state"], "updated_at": entry["updated_at"],
         "manifest_file_count": len(entry["files"]), "verified_file_count": 0,
@@ -297,12 +325,19 @@ def read_type(root, day, category, entry, opts, budget, audio_files):
     entries = entry["files"]
     if not entries:
         return outcome, {}
-    if opts.recording_id is not None and category != "results":
+    if opts.recording_id is not None and category in ("audio", "transcripts"):
         entries = [item for item in entries if item["recording_id"] == opts.recording_id]
-        if not entries:
-            return {**outcome, "status": "no_match"}, {}
+    if category in APP_MARKDOWN:
+        entries = [
+            item for item in entries
+            if (opts.item_id is None or item["item_id"] == opts.item_id)
+            and (opts.item_kind is None or item["kind"] == opts.item_kind)
+        ]
+    if not entries:
+        return {**outcome, "status": "no_match"}, {}
 
     audio_index, evidence, matched, truncated, pairings = {}, [], 0, False, {}
+    next_item = None
     for file in entries:
         relative = f'{day}/{file["path"]}'
         data = root.read_file(relative, limit=LIMITS.get(category), expected=file, retain=category != "audio")
@@ -314,22 +349,32 @@ def read_type(root, day, category, entry, opts, budget, audio_files):
                     evidence.append({key: file[key] for key in ("path", "recording_id", "kind", "byte_count")})
                 else:
                     truncated = True
-        elif category == "results":
+        elif category == "results" or category in APP_MARKDOWN:
             try:
                 markdown = data.decode("utf-8")
             except UnicodeDecodeError as exc:
-                raise ExportError("invalid_contract", "Daily Markdown must be UTF-8.") from exc
+                raise ExportError("invalid_contract", "Exported Markdown must be UTF-8.") from exc
             if markdown.startswith("\ufeff"):
-                raise ExportError("invalid_contract", "Daily Markdown must not start with a BOM.")
+                raise ExportError("invalid_contract", "Exported Markdown must not start with a BOM.")
             if opts.mode == "read":
+                identity = {}
+                if category in APP_MARKDOWN:
+                    identity.update(item_id=file["item_id"], kind=file["kind"])
+                if category == "favorites":
+                    identity["favorited_at"] = file["favorited_at"]
                 remaining = markdown[opts.markdown_offset:]
-                excerpt = budget.take(remaining, label_size=len(file["path"]))
-                truncated = excerpt != remaining
+                label_size = len(file["path"]) + sum(len(value) for value in identity.values())
+                excerpt = budget.take(remaining, label_size=label_size)
+                cut = excerpt != remaining
+                truncated = truncated or cut
                 if excerpt is not None:
                     evidence.append({
                         "path": file["path"], "offset": opts.markdown_offset, "markdown": excerpt,
-                        "next_offset": opts.markdown_offset + len(excerpt) if truncated else None,
+                        "next_offset": opts.markdown_offset + len(excerpt) if cut else None,
+                        **identity,
                     })
+                elif next_item is None and category in APP_MARKDOWN:
+                    next_item = {"item_id": file["item_id"], "kind": file["kind"]}
         else:
             transcript = read_transcript(data, day, file)
             audio = audio_files.get((transcript["recording_id"], transcript["kind"]))
@@ -346,6 +391,8 @@ def read_type(root, day, category, entry, opts, budget, audio_files):
     outcome.update(status="readable", verified_file_count=len(entries))
     if opts.mode == "read":
         outcome.update(evidence=evidence, truncated=truncated)
+        if next_item is not None:
+            outcome["next_item"] = next_item
         if category == "transcripts":
             outcome["matched_sentence_count"] = matched
             if matched == 0:
@@ -362,7 +409,7 @@ def load_day(root, day):
         if exc.status == "file_missing":
             raise ExportError("manifest_not_found", "No readable manifest is visible for this archive date.") from exc
         raise
-    return raw, read_manifest(raw, day, root.marker["publisher_id"])
+    return raw, read_manifest(raw, day, root.marker["publisher_id"], root.marker["format"])
 
 
 def inspect_day(root, day, categories, opts, budget):
@@ -372,7 +419,7 @@ def inspect_day(root, day, categories, opts, budget):
         try:
             raw, manifest = load_day(root, day)
             # Verify explicitly requested audio first so transcript offsets can be paired.
-            order = ("results", "audio", "transcripts")
+            order = ("results", "audio", "events", "daily_reviews", "meeting_notes", "favorites", "transcripts")
             for category in order:
                 if category not in categories:
                     continue
@@ -408,7 +455,7 @@ def inspect_day(root, day, categories, opts, budget):
 
 def execute(root, opts):
     report = {
-        "schema_version": VERSION, "environment": root.marker["environment"],
+        "format": root.marker["format"], "schema_version": VERSION, "environment": root.marker["environment"],
         "root": str(root.path), "visibility": "local_device_snapshot",
     }
     if opts.mode == "list":
@@ -416,7 +463,12 @@ def execute(root, opts):
         report.update(archive_days=days[:opts.limit], matched_date_count=len(days))
         return report, 0
 
-    categories = CATEGORIES if opts.mode == "validate" else tuple(dict.fromkeys(opts.types or ("results", "transcripts")))
+    app_format = root.marker["format"] == APP_FORMAT
+    allowed = APP_CATEGORIES if app_format else CATEGORIES
+    defaults = ("events", "daily_reviews", "transcripts") if app_format else ("results", "transcripts")
+    categories = allowed if opts.mode == "validate" else tuple(dict.fromkeys(opts.types or defaults))
+    if any(category not in allowed for category in categories):
+        raise ExportError("unsupported_category", "The selected export format does not publish the requested category.")
     budget = EvidenceBudget(getattr(opts, "char_limit", 0))
     if opts.latest:
         report["skipped"] = []
@@ -466,14 +518,14 @@ def arguments():
         return parse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", action="version", version="memova-icloud-export 0.1.0 (V1)")
+    parser.add_argument("--version", action="version", version="memova-icloud-export 0.2.0-dev (App V1 and preview V1)")
     modes = parser.add_subparsers(dest="mode", required=True)
     for mode in ("list", "read", "validate"):
         sub = modes.add_parser(mode)
-        sub.add_argument("--root", required=mode == "validate", help="authorized v1 folder or its parent")
+        sub.add_argument("--root", required=mode == "validate", help="authorized app-v1 or preview v1 folder, or its parent")
         sub.add_argument("--environment", choices=["production", "development"], default="production")
         sub.add_argument("--timeout", type=integer(1, 600), default=60, help="whole operation deadline in seconds")
-        sub.set_defaults(latest=False, recording_id=None)
+        sub.set_defaults(latest=False, recording_id=None, item_id=None, item_kind=None)
         if mode == "list":
             sub.add_argument("--from", dest="first", type=day_arg)
             sub.add_argument("--through", dest="last", type=day_arg)
@@ -482,8 +534,10 @@ def arguments():
             selection = sub.add_mutually_exclusive_group(required=True)
             selection.add_argument("--date", type=day_arg, action="append")
             selection.add_argument("--latest", action="store_true")
-            sub.add_argument("--type", dest="types", action="append", choices=CATEGORIES)
+            sub.add_argument("--type", dest="types", action="append", choices=tuple(dict.fromkeys(CATEGORIES + APP_CATEGORIES)))
             sub.add_argument("--recording-id")
+            sub.add_argument("--item-id", help="exact App V1 Markdown item ID")
+            sub.add_argument("--item-kind", choices=APP_MARKDOWN["favorites"], help="App V1 Markdown item kind")
             sub.add_argument("--sentence-id")
             sub.add_argument("--contains", help="case-insensitive literal transcript text filter")
             sub.add_argument("--char-limit", type=integer(256, 200_000), default=24_000)

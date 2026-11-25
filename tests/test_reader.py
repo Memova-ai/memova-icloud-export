@@ -34,7 +34,18 @@ def write_json(path, content):
     path.write_text(json.dumps(content, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-class ReaderTests(unittest.TestCase):
+class CLIReaderTestCase(unittest.TestCase):
+    def run_cli(self, *args, root=True):
+        arguments = ["read_export.py", *args]
+        if root:
+            arguments += ["--root", str(self.root)]
+        output = io.StringIO()
+        with patch.object(sys, "argv", arguments), contextlib.redirect_stdout(output):
+            code = reader.main()
+        return code, json.loads(output.getvalue())
+
+
+class ReaderTests(CLIReaderTestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -44,15 +55,6 @@ class ReaderTests(unittest.TestCase):
         metadata = patch.object(reader, "mac_metadata")
         self.metadata = metadata.start()
         self.addCleanup(metadata.stop)
-
-    def run_cli(self, *args, root=True):
-        arguments = ["read_export.py", *args]
-        if root:
-            arguments += ["--root", str(self.root)]
-        output = io.StringIO()
-        with patch.object(sys, "argv", arguments), contextlib.redirect_stdout(output):
-            code = reader.main()
-        return code, json.loads(output.getvalue())
 
     def read(self, *args, day=DAY):
         code, output = self.run_cli("read", "--date", day, *args)
@@ -408,6 +410,170 @@ class ReaderTests(unittest.TestCase):
             self.assertTrue(paths)
             for path in paths:
                 validator.validate(json.loads(path.read_bytes()))
+
+
+class AppReaderTests(CLIReaderTestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
+        self.root = self.base / "app-v1"
+        self.root.mkdir()
+        (self.root / DAY).mkdir()
+        metadata = patch.object(reader, "mac_metadata")
+        self.metadata = metadata.start()
+        self.addCleanup(metadata.stop)
+
+        marker = json.loads((FIXTURE / "format.json").read_bytes())
+        marker["format"] = reader.APP_FORMAT
+        write_json(self.root / "format.json", marker)
+        head = json.loads((FIXTURE / DAY / "manifest.json").read_bytes())
+        self.head = head
+        self.contents = head["contents"]
+        self.contents.pop("results")
+        for category in ("transcripts", "audio"):
+            entry = self.contents[category]["files"][0]
+            old_path = FIXTURE / DAY / entry["path"]
+            key = hashlib.sha256(entry["recording_id"].encode()).hexdigest()
+            entry["path"] = f'{category}/hourly/{key}/{entry["sha256"]}{old_path.suffix}'
+            target = self.root / DAY / entry["path"]
+            target.parent.mkdir(parents=True)
+            shutil.copyfile(old_path, target)
+        self.add_markdown("events", "event", "event-雪", "# Synthetic event")
+        self.add_markdown("daily_reviews", "daily_review", DAY, "# Synthetic recap")
+        self.add_markdown("meeting_notes", "meeting", "note-1", "# Synthetic meeting notes")
+        self.add_markdown("favorites", "event", "event-雪", "# Saved synthetic title")
+        self.write_head()
+
+    def add_markdown(self, category, kind, item_id, markdown):
+        data = markdown.encode()
+        digest = hashlib.sha256(data).hexdigest()
+        key = hashlib.sha256(item_id.encode()).hexdigest()
+        prefix = f"{category}/{kind}" if category == "favorites" else category
+        path = f"{prefix}/{key}/{digest}.md"
+        target = self.root / DAY / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        entry = {"path": path, "byte_count": len(data), "sha256": digest, "item_id": item_id, "kind": kind}
+        if category == "favorites":
+            entry["favorited_at"] = "2026-11-25T00:30:00Z"
+        files = self.contents.setdefault(category, {
+            "state": "ready", "revision": REVISION, "updated_at": self.head["committed_at"], "files": [],
+        })["files"]
+        files.append(entry)
+        files.sort(key=lambda item: item["path"])
+        return entry
+
+    def write_head(self):
+        write_json(self.root / DAY / "manifest.json", self.head)
+
+    def test_default_read_is_text_only_and_uses_official_categories(self):
+        audio_path = self.contents["audio"]["files"][0]["path"]
+        (self.root / DAY / audio_path).unlink()
+        code, report = self.run_cli("read", "--date", DAY)
+        self.assertEqual((code, report["format"], report["schema_version"]), (0, reader.APP_FORMAT, 1))
+        contents = report["days"][0]["contents"]
+        self.assertEqual(tuple(contents), ("events", "daily_reviews", "transcripts"))
+        self.assertTrue(all(entry["status"] == "readable" for entry in contents.values()))
+        self.assertEqual(contents["events"]["evidence"][0]["item_id"], "event-雪")
+        self.assertNotIn("audio_path", contents["transcripts"]["evidence"][0])
+
+    def test_validate_checks_all_six_categories_without_exposing_evidence(self):
+        code, report = self.run_cli("validate")
+        contents = report["days"][0]["contents"]
+        self.assertEqual((code, set(contents)), (0, set(reader.APP_CATEGORIES)))
+        self.assertTrue(all(entry["status"] == "readable" and "evidence" not in entry for entry in contents.values()))
+        self.assertEqual(contents["transcripts"]["verified_audio_pairings"], {"matched": 1})
+
+    def test_standalone_favorite_is_readable_without_source_categories(self):
+        for category in ("audio", "transcripts", "events"):
+            self.contents[category].update(state="never_exported", revision=None, updated_at=None, files=[])
+        self.write_head()
+        code, report = self.run_cli("read", "--date", DAY, "--type", "favorites")
+        self.assertEqual(code, 0)
+        evidence = report["days"][0]["contents"]["favorites"]["evidence"][0]
+        self.assertEqual(evidence["markdown"], "# Saved synthetic title")
+        self.assertEqual(evidence["favorited_at"], "2026-11-25T00:30:00Z")
+        self.assertEqual(evidence["kind"], "event")
+        self.assertNotIn("audio_path", evidence)
+
+    def test_root_discovery_prefers_official_and_explicit_preview_stays_readable(self):
+        home = self.base / "home"
+        official, _ = reader.default_paths(home, "production", folder="app-v1")
+        preview, _ = reader.default_paths(home, "production")
+        shutil.copytree(FIXTURE, preview)
+        shutil.copytree(self.root, official)
+        with patch.object(sys, "platform", "darwin"), patch.object(Path, "home", return_value=home):
+            code, report = self.run_cli("list", root=False)
+        self.assertEqual((code, report["root"]), (0, str(official.resolve())))
+        code, report = self.run_cli("list", "--root", str(official.parent), root=False)
+        self.assertEqual((code, report["format"]), (0, reader.APP_FORMAT))
+        code, report = self.run_cli("read", "--latest", "--root", str(preview), "--type", "results", root=False)
+        self.assertEqual((code, report["format"]), (0, reader.FORMAT))
+
+    def test_present_missing_or_invalid_official_marker_blocks_preview_fallback(self):
+        home = self.base / "home"
+        official, _ = reader.default_paths(home, "production", folder="app-v1")
+        preview, _ = reader.default_paths(home, "production")
+        shutil.copytree(FIXTURE, preview)
+        official.mkdir()
+        with patch.object(sys, "platform", "darwin"), patch.object(Path, "home", return_value=home):
+            code, report = self.run_cli("list", root=False)
+            self.assertEqual((code, report["status"]), (2, "root_marker_not_found"))
+            shutil.copyfile(preview / "format.json", official / "format.json")
+            code, report = self.run_cli("list", root=False)
+            self.assertEqual((code, report["status"]), (2, "invalid_contract"))
+
+    def test_wrong_digest_path_or_bytes_emit_no_affected_category_evidence(self):
+        event = self.contents["events"]["files"][0]
+        event_path = self.root / DAY / event["path"]
+        event_path.write_bytes(b"x" * event["byte_count"])
+        transcript = self.contents["transcripts"]["files"][0]
+        transcript["path"] = transcript["path"].replace(transcript["sha256"], "0" * 64)
+        self.write_head()
+        code, report = self.run_cli("read", "--date", DAY)
+        contents = report["days"][0]["contents"]
+        self.assertEqual(code, 1)
+        self.assertEqual(contents["events"]["status"], "integrity_mismatch")
+        self.assertEqual(contents["transcripts"]["status"], "unsafe_path")
+        self.assertNotIn("evidence", contents["events"])
+        self.assertNotIn("evidence", contents["transcripts"])
+        self.assertEqual(contents["daily_reviews"]["status"], "readable")
+
+    def test_markdown_offset_is_usable_for_a_specific_item(self):
+        markdown = "文" * 345
+        self.add_markdown("events", "event", "larger-item", markdown)
+        self.write_head()
+        command = ("read", "--date", DAY, "--type", "events", "--item-id", "larger-item", "--char-limit", "256")
+        offset, assembled = 0, ""
+        while len(assembled) < len(markdown):
+            code, report = self.run_cli(*command, "--markdown-offset", str(offset))
+            outcome = report["days"][0]["contents"]["events"]
+            self.assertEqual((code, outcome["verified_file_count"]), (0, 1))
+            evidence = outcome["evidence"][0]
+            self.assertTrue(evidence["markdown"])
+            assembled += evidence["markdown"]
+            offset = evidence["next_offset"]
+        self.assertEqual((assembled, offset), (markdown, None))
+
+    def test_invalid_favorite_timestamp_and_daily_review_identity_fail(self):
+        self.contents["favorites"]["files"][0]["favorited_at"] = "2026-11-25T08:30:00+08:00"
+        self.contents["daily_reviews"]["files"][0]["item_id"] = "2026-11-23"
+        self.write_head()
+        code, report = self.run_cli("read", "--date", DAY, "--type", "favorites", "--type", "daily_reviews")
+        contents = report["days"][0]["contents"]
+        self.assertEqual(code, 1)
+        self.assertTrue(all(entry["status"] == "invalid_contract" and "evidence" not in entry for entry in contents.values()))
+
+    def test_deleted_item_comes_from_manifest_even_if_stale_file_remains(self):
+        event = self.contents["events"]
+        self.assertTrue((self.root / DAY / event["files"][0]["path"]).exists())
+        event.update(state="deleted", files=[])
+        self.write_head()
+        code, report = self.run_cli("read", "--date", DAY, "--type", "events")
+        outcome = report["days"][0]["contents"]["events"]
+        self.assertEqual((code, outcome["status"], outcome["verified_file_count"]), (0, "deleted", 0))
+        self.assertNotIn("evidence", outcome)
 
 
 if __name__ == "__main__":
